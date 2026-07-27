@@ -1,0 +1,51 @@
+name: 每日美股决策仪表盘
+
+on:
+  schedule:
+    # UTC 00:00 = 北京时间 08:00；此时已在美股收盘之后
+    - cron: '0 0 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: us-stock-dashboard
+  cancel-in-progress: false
+
+jobs:
+  analyze-us:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: 创建必要目录
+        run: mkdir -p data logs reports
+      - name: 生成美股决策仪表盘
+        run: python main.py --force-run
+        env:
+          # 固定为美股自选；不会影响 A 股 16:00 的原有任务
+          STOCK_LIST: TSLA,NVDA,SPCX
+          MARKET_REVIEW_REGION: us
+          TRADING_DAY_CHECK_ENABLED: 'false'
+          GENERATION_BACKEND: ${{ vars.GENERATION_BACKEND || 'litellm' }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          REPORT_TYPE: ${{ vars.REPORT_TYPE || 'enhanced' }}
+      - name: 上传分析报告
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: us-analysis-reports-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          retention-days: 30
